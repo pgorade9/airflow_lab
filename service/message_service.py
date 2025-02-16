@@ -10,8 +10,11 @@ from azure.servicebus.aio.management import ServiceBusAdministrationClient
 
 from configuration import keyvault
 
+global batch_counter
+batch_counter = 0
 
-def generateFlowControllerMessage(env, dag):
+
+def generateFlowControllerMessage(env, dag, df):
     conf = {}
     unique_id = str(uuid.uuid4())
     # Please check dag conf keys for each dag in its repo for example execution_context or executionContext
@@ -31,32 +34,36 @@ def generateFlowControllerMessage(env, dag):
         "url": f"http://airflow-app-web:8080/airflow2/api/v1/dags/{dag}/dagRuns"
     }
     message_body = json.dumps(message)
-    print(f"{message_body=}")
+    # print(f"{message_body=}")
     entry = {'run_Id': unique_id}
     df.loc[len(df)] = entry
     return message_body
 
 
-async def send_batch_message(env, dag, batch_size, counter):
+async def send_batch_message(env, dag, batch_size, timeout, dataframe):
+    global batch_counter
+
     async with ServiceBusClient.from_connection_string(conn_str=keyvault[env]["CONNECTION_STRING"],
                                                        logging_enable=False) as servicebus_client:
         async with servicebus_client.get_topic_sender(topic_name=keyvault["TOPIC_NAME"],
-                                                      socket_timeout=TIMEOUT) as sender:
+                                                      socket_timeout=timeout) as sender:
             batch = await sender.create_message_batch()
             for _ in range(batch_size):
                 try:
-                    batch.add_message(ServiceBusMessage(generateFlowControllerMessage(env, dag)))
+                    batch.add_message(ServiceBusMessage(generateFlowControllerMessage(env, dag, dataframe)))
                 except ValueError:
                     break
             await sender.send_messages(batch)
-            counter += 1
-            print(f"Completed sending {counter} batch of size {batch_size}")
+            batch_counter += 1
+            print(f"Completed sending {batch_counter} batch of size {batch_size}")
 
 
 async def async_batch_message(env, dag, batch_size, count):
+    timeout = 30
+    dataframe = pd.DataFrame(columns=['run_Id'])
+
     number_of_batches = int(count / batch_size)
     print(f"{number_of_batches=}")
-    batch_counter = 0
     task_size = 10 if number_of_batches % 10 == 0 else 1
     print("**********************************")
     print(f"{task_size=}")
@@ -64,8 +71,10 @@ async def async_batch_message(env, dag, batch_size, count):
     task_group_size = int(number_of_batches / task_size)
 
     for _ in range(task_group_size):
-        tasks = [send_batch_message(env, dag, batch_size, batch_counter) for _ in range(task_size)]
+        tasks = [send_batch_message(env, dag, batch_size, timeout, dataframe) for _ in range(task_size)]
         await asyncio.gather(*tasks)
+
+    return {"msg": f"Sent Batch of {count} jobs to flow-controller topic on admedev01-dp4 partition successfully"}
 
 
 async def process_message(receiver, msg: ServiceBusReceivedMessage, counter):
@@ -78,7 +87,7 @@ async def process_message(receiver, msg: ServiceBusReceivedMessage, counter):
         print(f"Error processing message: {e}")
 
 
-async def receive_and_complete_messages_from_subscription(env):
+async def receive_and_complete_messages(env):
     try:
         async with ServiceBusClient.from_connection_string(
                 conn_str=keyvault[env]["CONNECTION_STRING"], logging_enable=False
@@ -94,21 +103,17 @@ async def receive_and_complete_messages_from_subscription(env):
                     await process_message(receiver, msg, counter=0)
     except Exception as e:
         print(f"Error initializing ServiceBusClient: {e}")
-
-    print("Done Receiving and completing messages")
+    return {"msg": "Done Receiving and completing messages"}
 
 
 async def get_service_bus_topic_info(env):
     # Create a client to manage Service Bus
-    async with ServiceBusAdministrationClient.from_connection_string(keyvault[env]["CONNECTION_STRING"]) as admin_client:
+    async with ServiceBusAdministrationClient.from_connection_string(
+            keyvault[env]["CONNECTION_STRING"]) as admin_client:
         # Get topic subscription details
         subscription_info = await admin_client.get_subscription_runtime_properties(keyvault["TOPIC_NAME"],
-                                                                             keyvault["SUBSCRIPTION_NAME"])
+                                                                                   keyvault["SUBSCRIPTION_NAME"])
         return subscription_info
-    # Print message counts
-    # print(f"Active messages: {subscription_info.active_message_count}")
-    # print(f"Dead-letter messages: {subscription_info.dead_letter_message_count}")
-    # print(f"Total messages: {subscription_info.total_message_count}")  # If using a recent SDK version
 
 
 async def receive_and_delete_messages(env):
@@ -123,7 +128,6 @@ async def receive_and_delete_messages(env):
                 print(f"Deleted {len(messages)} messages")
                 if not messages:
                     break  # Stop when no more messages
-
     print("All messages removed from the topic instantly!")
 
 
@@ -142,13 +146,14 @@ if __name__ == "__main__":
     #                                 dag=dags_ltops[-1],
     #                                 batch_size=1,
     #                                 count=1))
+    df.to_excel("runIds.xlsx")
 
     # Get Topic Info
     topic_info = asyncio.run(get_service_bus_topic_info(env=envs_ltops[4]))
     print(f"Active Messages : {topic_info.active_message_count}")
 
     # Receive and complete messages
-    # asyncio.run(receive_and_complete_messages_from_subscription(env=envs_ltops[4]))
+    # asyncio.run(receive_and_complete_messages(env=envs_ltops[4]))
 
     #  Receive and delete messages
-    asyncio.run(receive_and_delete_messages(env=envs_ltops[4]))
+    # asyncio.run(receive_and_delete_messages(env=envs_ltops[4]))

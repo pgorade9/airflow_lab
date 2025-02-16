@@ -7,7 +7,22 @@ import aiohttp
 from configuration import keyvault
 
 
-def generateAirflowDagMessage(env, dag):
+async def get_dag_status_from_id(dag, dag_run_id):
+    async with aiohttp.ClientSession() as session:
+        url = f"{keyvault["airflow_url"]}/{dag}/dagRuns/{dag_run_id}"
+        username = keyvault["airflow_username"]
+        password = keyvault["airflow_password"]
+        auth = aiohttp.BasicAuth(username, password)
+        # print(type(payload))
+        async with session.get(url, auth=auth) as response:
+            response_json = await response.json()
+            if response.status == 200:
+                return response_json
+            else:
+                return {"status": f"Run id {dag_run_id} Not Found"}
+
+
+def generateAirflowDagMessage(env, dag, dataframe):
     conf = {}
     unique_id = str(uuid.uuid4())
     # Please check dag conf keys for each dag in its repo for example execution_context or executionContext
@@ -24,38 +39,43 @@ def generateAirflowDagMessage(env, dag):
         "conf": conf
     }
     # print(f"{json.dumps(message, indent=4)}")
+    entry = {'run_Id': unique_id}
+    dataframe.loc[len(dataframe)] = entry
     return message
 
 
-async def trigger_dag(env, dag):
+async def trigger_dag(env, dag, dataframe):
     async with aiohttp.ClientSession() as session:
 
-        url = keyvault["airflow_url"] + f"/{dag}/dagRuns"
+        url = f"{keyvault["airflow_url"]}/{dag}/dagRuns"
         username = keyvault["airflow_username"]
         password = keyvault["airflow_password"]
         auth = aiohttp.BasicAuth(username, password)
-        payload = generateAirflowDagMessage(env, dag)
+        payload = generateAirflowDagMessage(env, dag, dataframe)
         # print(type(payload))
         async with session.post(url, auth=auth, json=payload) as response:
             data = await response.json()
             if response.status == 200:
                 # print("✅ DAG Triggered:", data["dag_run_id"])
                 entry = {'run_Id': data["dag_run_id"]}
-                df.loc[len(df)] = entry
+                dataframe.loc[len(dataframe)] = entry
             else:
                 print(f"❌ Failed: {response.status}, {data}")
 
 
 async def async_trigger_dag(env, dag, batch_size, count):
+    dataframe = pd.DataFrame(columns=['run_Id'])
+
     batch_counter = 0
     number_of_batches = int(count / batch_size)
     print(f"{number_of_batches=}")
 
     for _ in range(number_of_batches):
-        tasks = [trigger_dag(env, dag) for _ in range(batch_size)]
+        tasks = [trigger_dag(env, dag, dataframe) for _ in range(batch_size)]
         await asyncio.gather(*tasks)
         batch_counter += 1
         print(f"Completed {batch_counter} batch of {batch_size} messages")
+    return {"msg": f"Sent Batch of {count} jobs to Airflow successfully !!"}
 
 
 if __name__ == "__main__":

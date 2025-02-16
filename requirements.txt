@@ -2,3 +2,4 @@ aiohttp~=3.11.12
 pandas~=2.2.3
 azure-servicebus
 pydantic~=2.10.6
+fastapi~=0.115.8
