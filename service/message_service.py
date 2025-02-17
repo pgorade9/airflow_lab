@@ -10,7 +10,6 @@ from azure.servicebus.aio.management import ServiceBusAdministrationClient
 
 from configuration import keyvault
 
-global batch_counter
 batch_counter = 0
 
 
