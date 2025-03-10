@@ -4,14 +4,14 @@ import time
 import uuid
 
 import pandas as pd
-from azure.servicebus import ServiceBusMessage, ServiceBusReceivedMessage, ServiceBusReceiveMode
+from azure.servicebus import ServiceBusMessage, ServiceBusReceivedMessage, ServiceBusReceiveMode, ServiceBusSubQueue
 from azure.servicebus.aio import ServiceBusClient
 from azure.servicebus.aio.management import ServiceBusAdministrationClient
 
 from configuration import keyvault
 
 batch_counter = 0
-
+TIMEOUT = 30
 
 def generateFlowControllerMessage(env, dag, df):
     conf = {}
@@ -86,7 +86,7 @@ async def process_message(receiver, msg: ServiceBusReceivedMessage, counter):
         print(f"Error processing message: {e}")
 
 
-async def receive_and_complete_messages(env):
+async def receive_and_complete_active_messages(env):
     try:
         async with ServiceBusClient.from_connection_string(
                 conn_str=keyvault[env]["CONNECTION_STRING"], logging_enable=False
@@ -97,12 +97,32 @@ async def receive_and_complete_messages(env):
                     receive_mode=ServiceBusReceiveMode.PEEK_LOCK,
                     max_wait_time=TIMEOUT
             ) as receiver:
-                print(f"Starting to receive messages from {keyvault["SUBSCRIPTION_NAME"]}")
+                print(f"Starting to receive Active messages from {keyvault["SUBSCRIPTION_NAME"]}")
                 async for msg in receiver:  # Async generator
                     await process_message(receiver, msg, counter=0)
     except Exception as e:
         print(f"Error initializing ServiceBusClient: {e}")
-    return {"msg": "Done Receiving and completing messages"}
+    return {"msg": "Done Receiving and completing Active messages"}
+
+
+async def receive_and_delete_dead_letter_queue_messages(env):
+
+    async with ServiceBusClient.from_connection_string(
+            conn_str=keyvault[env]["CONNECTION_STRING"], logging_enable=False
+    ) as servicebus_client:
+        async with servicebus_client.get_subscription_receiver(
+                topic_name=keyvault["TOPIC_NAME"],
+                subscription_name=keyvault["SUBSCRIPTION_NAME"],
+                sub_queue=ServiceBusSubQueue.DEAD_LETTER,
+                receive_mode=ServiceBusReceiveMode.RECEIVE_AND_DELETE,
+                max_wait_time=TIMEOUT
+        ) as receiver:
+            while True:
+                messages = await receiver.receive_messages(max_message_count=100, max_wait_time=5)
+                print(f"Deleted {len(messages)} messages")
+                if not messages:
+                    break  # Stop when no more messages
+    return {"msg": "Done Receiving and completing Dead Letter Queue messages"}
 
 
 async def get_service_bus_topic_info(env):
@@ -115,7 +135,7 @@ async def get_service_bus_topic_info(env):
         return subscription_info
 
 
-async def receive_and_delete_messages(env):
+async def receive_and_delete_active_messages(env):
     async with ServiceBusClient.from_connection_string(keyvault[env]["CONNECTION_STRING"]) as client:
         async with client.get_subscription_receiver(
                 topic_name=keyvault["TOPIC_NAME"],
@@ -127,7 +147,7 @@ async def receive_and_delete_messages(env):
                 print(f"Deleted {len(messages)} messages")
                 if not messages:
                     break  # Stop when no more messages
-    print("All messages removed from the topic instantly!")
+    return {"msg": "All messages removed from the topic instantly!"}
 
 
 if __name__ == "__main__":

@@ -7,7 +7,8 @@ import aiohttp
 from configuration import keyvault
 
 
-async def get_dag_status_from_id(dag, dag_run_id):
+async def get_dag_status_from_id(env, dag, dag_run_id):
+    await set_kube_context(keyvault[env]["cluster"])
     async with aiohttp.ClientSession() as session:
         url = f"{keyvault["airflow_url"]}/{dag}/dagRuns/{dag_run_id}"
         username = keyvault["airflow_username"]
@@ -64,6 +65,7 @@ async def trigger_dag(env, dag, dataframe):
 
 
 async def async_trigger_dag(env, dag, batch_size, count):
+    await set_kube_context(keyvault[env]["cluster"])
     dataframe = pd.DataFrame(columns=['run_Id'])
 
     batch_counter = 0
@@ -76,6 +78,25 @@ async def async_trigger_dag(env, dag, batch_size, count):
         batch_counter += 1
         print(f"Completed {batch_counter} batch of {batch_size} messages")
     return {"msg": f"Sent Batch of {count} jobs to Airflow successfully !!"}
+
+
+# This method is only required for airflow api
+async def set_kube_context(context: str):
+    """Asynchronously sets the Kubernetes context using kubectl."""
+    process = await asyncio.create_subprocess_exec(
+        "kubectl", "config", "use-context", context,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+
+    stdout, stderr = await process.communicate()
+
+    if process.returncode == 0:
+        print(f"Context changed to: {context}")
+        print(stdout.decode().strip())
+    else:
+        print(f"Failed to change context to: {context}")
+        print(stderr.decode().strip())
 
 
 if __name__ == "__main__":
