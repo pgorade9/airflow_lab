@@ -9,14 +9,15 @@ from configuration import keyvault
 
 async def get_dag_status_from_id(env, dag, dag_run_id):
     await set_kube_context(keyvault[env]["cluster"])
+    port_forward_process = await port_forward_airflow_web(keyvault[env]["namespace"])
     async with aiohttp.ClientSession() as session:
-        url = f"{keyvault["airflow_url"]}/{dag}/dagRuns/{dag_run_id}"
+        url = f"{keyvault['airflow_url']}/{dag}/dagRuns/{dag_run_id}"
         username = keyvault["airflow_username"]
         password = keyvault["airflow_password"]
         auth = aiohttp.BasicAuth(username, password)
-        # print(type(payload))
         async with session.get(url, auth=auth) as response:
             response_json = await response.json()
+            await stop_port_forward(port_forward_process)
             if response.status == 200:
                 return response_json
             else:
@@ -97,6 +98,29 @@ async def set_kube_context(context: str):
     else:
         print(f"Failed to change context to: {context}")
         print(stderr.decode().strip())
+
+
+async def port_forward_airflow_web(namespace: str):
+    """Runs kubectl port-forward in daemon mode (background)."""
+    print(f"Starting port-forwarding for namespace: {namespace}")
+
+    process = await asyncio.create_subprocess_exec(
+        "kubectl", "port-forward", "svc/airflow-app-web", "8100:8080", "-n", namespace,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+
+    await asyncio.sleep(3)
+    return process
+
+
+async def stop_port_forward(process):
+    """Stops the port-forwarding process."""
+    if process and process.returncode is None:  # Check if process is still running
+        print("\nStopping port-forward...")
+        process.terminate()  # Send SIGTERM
+        await process.wait()  # Wait for process to exit
+        print("Port-forwarding stopped.")
 
 
 if __name__ == "__main__":
