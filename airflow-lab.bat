@@ -21,8 +21,8 @@ if %errorlevel% neq 0 (
 )
 
 
-@echo off
-start cmd /k "C:\Users\pgorade\kubectl.exe config use-context p-lightops-20611-2-az-weu-2 && C:\Users\pgorade\kubectl.exe port-forward svc/airflow-app-web 8100:8080 -n prod-sdfs-canary"
+@REM @echo off
+@REM start cmd /k "C:\Users\pgorade\kubectl.exe config use-context p-lightops-20611-2-az-weu-2 && C:\Users\pgorade\kubectl.exe port-forward svc/airflow-app-web 8100:8080 -n prod-sdfs-canary"
 
 
 @echo off
