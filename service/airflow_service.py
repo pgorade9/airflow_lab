@@ -16,7 +16,8 @@ async def get_dag_status_from_id(env, dag, dag_run_id):
         username = keyvault["airflow_username"]
         password = keyvault["airflow_password"]
         auth = aiohttp.BasicAuth(username, password)
-        async with session.get(url, auth=auth) as response:
+        headers = {"accept": "application/json"}
+        async with session.get(url, auth=auth, headers=headers) as response:
             response_json = await response.json()
             await stop_port_forward(port_forward_process)
             if response.status == 200:
