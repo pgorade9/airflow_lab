@@ -5,6 +5,7 @@ import pandas as pd
 import aiohttp
 
 from configuration import keyvault
+from fastapi.responses import FileResponse
 
 
 async def get_dag_status_from_id(env, dag, dag_run_id):
@@ -20,6 +21,30 @@ async def get_dag_status_from_id(env, dag, dag_run_id):
             await stop_port_forward(port_forward_process)
             if response.status == 200:
                 return response_json
+            else:
+                return {"status": f"Run id {dag_run_id} Not Found"}
+
+
+async def get_dag_logs_from_run_id(env, dag, dag_run_id):
+    await set_kube_context(keyvault[env]["cluster"])
+    port_forward_process = await port_forward_airflow_web(keyvault[env]["namespace"])
+    async with aiohttp.ClientSession() as session:
+        url = f"{keyvault['airflow_url']}/api/v1/dags/{dag}/dagRuns/{dag_run_id}/taskInstances/{keyvault['task-id'][dag]}/logs/1"
+        username = keyvault["airflow_username"]
+        password = keyvault["airflow_password"]
+
+        auth = aiohttp.BasicAuth(username, password)
+
+        async with session.get(url, auth=auth) as response:
+            response_text = await response.text()
+            await stop_port_forward(port_forward_process)
+            if response.status == 200:
+                FILENAME = f"{dag_run_id}.txt"
+                with open(FILENAME, "w+") as fp:
+                    for line in response_text:
+                        fp.write(line)
+                return FileResponse(path=FILENAME, filename=FILENAME, media_type="application/octet-stream")
+                # return response_text
             else:
                 return {"status": f"Run id {dag_run_id} Not Found"}
 
@@ -49,7 +74,7 @@ def generateAirflowDagMessage(env, dag, dataframe):
 async def trigger_dag(env, dag, dataframe):
     async with aiohttp.ClientSession() as session:
 
-        url = f"{keyvault["airflow_url"]}/{dag}/dagRuns"
+        url = f"{keyvault["airflow_url"]}/api/v1/dags/{dag}/dagRuns"
         username = keyvault["airflow_username"]
         password = keyvault["airflow_password"]
         auth = aiohttp.BasicAuth(username, password)
@@ -58,11 +83,10 @@ async def trigger_dag(env, dag, dataframe):
         async with session.post(url, auth=auth, json=payload) as response:
             data = await response.json()
             if response.status == 200:
-                # print("✅ DAG Triggered:", data["dag_run_id"])
                 entry = {'run_Id': data["dag_run_id"]}
                 dataframe.loc[len(dataframe)] = entry
             else:
-                print(f"❌ Failed: {response.status}, {data}")
+                print(f"Failed: {response.status}, {data}")
 
 
 async def async_trigger_dag(env, dag, batch_size, count):
@@ -109,18 +133,51 @@ async def port_forward_airflow_web(namespace: str):
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE
     )
-
-    await asyncio.sleep(3)
+    await validate_port_readiness()
     return process
 
 
+async def validate_port_readiness():
+    print("Validating port readiness.")
+    url = f"{keyvault['airflow_url']}/health"
+    username = keyvault["airflow_username"]
+    password = keyvault["airflow_password"]
+    auth = aiohttp.BasicAuth(username, password)
+    headers = {"accept":"application/json"}
+    async with aiohttp.ClientSession() as session:
+        while True:
+            try:
+                async with session.get(url, auth=auth, headers=headers) as response:
+                    response_json = await response.json()
+                    print(f"health response {response_json['scheduler']['status']=}")
+                    if response.status == 200:
+                        break
+                    await asyncio.sleep(1)
+            except Exception as e:
+                print(f"Connection not ready.......")
+
+
+
 async def stop_port_forward(process):
-    """Stops the port-forwarding process."""
-    if process and process.returncode is None:  # Check if process is still running
-        print("\nStopping port-forward...")
+    """Gracefully stops the port-forwarding process."""
+    if not process or process.returncode is not None:
+        print("Port-forward process is already stopped.")
+        return
+
+    print("\nStopping port-forward...")
+
+    try:
         process.terminate()  # Send SIGTERM
-        await process.wait()  # Wait for process to exit
+        try:
+            await asyncio.wait_for(process.wait(), timeout=5)  # Wait up to 5 seconds
+        except asyncio.TimeoutError:
+            print("Graceful termination timed out. Killing process...")
+            process.kill()  # Force stop
+            await process.wait()
+
         print("Port-forwarding stopped.")
+    except Exception as e:
+        print(f"Error stopping port-forward: {e}")
 
 
 if __name__ == "__main__":
