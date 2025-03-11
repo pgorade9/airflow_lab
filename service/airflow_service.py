@@ -143,7 +143,7 @@ async def validate_port_readiness():
     username = keyvault["airflow_username"]
     password = keyvault["airflow_password"]
     auth = aiohttp.BasicAuth(username, password)
-    headers = {"accept":"application/json"}
+    headers = {"accept": "application/json"}
     async with aiohttp.ClientSession() as session:
         while True:
             try:
@@ -155,7 +155,6 @@ async def validate_port_readiness():
                     await asyncio.sleep(1)
             except Exception as e:
                 print(f"Connection not ready.......")
-
 
 
 async def stop_port_forward(process):

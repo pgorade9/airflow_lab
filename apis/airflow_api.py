@@ -19,7 +19,7 @@ def get_dag_run_status(env: str = Query(None, description="Environment",
     return asyncio.run(get_dag_status_from_id(env, dag, run_id))
 
 
-@airflow_router.get("/dags/logs",response_class=FileResponse)
+@airflow_router.get("/dags/logs")
 def get_dag_logs(env: str = Query("evd-ltops", description="Environment",
                                                 enum=keyvault["envs-ltops"]),
                        dag: str = Query("shapefile_ingestor_wf_status_gsm", description="DAG Name",
