@@ -12,7 +12,7 @@ async def get_dag_status_from_id(env, dag, dag_run_id):
     await set_kube_context(keyvault[env]["cluster"])
     port_forward_process = await port_forward_airflow_web(keyvault[env]["namespace"])
     async with aiohttp.ClientSession() as session:
-        url = f"{keyvault['airflow_url']}/{dag}/dagRuns/{dag_run_id}"
+        url = f"{keyvault['airflow_url']}/api/v1/dags/{dag}/dagRuns/{dag_run_id}"
         username = keyvault["airflow_username"]
         password = keyvault["airflow_password"]
         auth = aiohttp.BasicAuth(username, password)
