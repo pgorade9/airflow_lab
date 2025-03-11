@@ -26,11 +26,11 @@ async def get_dag_status_from_id(env, dag, dag_run_id):
                 return {"status": f"Run id {dag_run_id} Not Found"}
 
 
-async def get_dag_logs_from_run_id(env, dag, dag_run_id):
+async def get_dag_logs_from_run_id(env, dag, dag_run_id, try_number):
     await set_kube_context(keyvault[env]["cluster"])
     port_forward_process = await port_forward_airflow_web(keyvault[env]["namespace"])
     async with aiohttp.ClientSession() as session:
-        url = f"{keyvault['airflow_url']}/api/v1/dags/{dag}/dagRuns/{dag_run_id}/taskInstances/{keyvault['task-id'][dag]}/logs/1"
+        url = f"{keyvault['airflow_url']}/api/v1/dags/{dag}/dagRuns/{dag_run_id}/taskInstances/{keyvault['task-id'][dag]}/logs/{try_number}"
         username = keyvault["airflow_username"]
         password = keyvault["airflow_password"]
 
@@ -41,10 +41,12 @@ async def get_dag_logs_from_run_id(env, dag, dag_run_id):
             await stop_port_forward(port_forward_process)
             if response.status == 200:
                 FILENAME = f"{dag_run_id}.txt"
+                OUTPUT = "output"
+                PATH = f"{OUTPUT}/{FILENAME}"
                 with open(FILENAME, "w+") as fp:
                     for line in response_text:
                         fp.write(line)
-                return FileResponse(path=FILENAME, filename=FILENAME, media_type="application/octet-stream")
+                return FileResponse(path=PATH, filename=FILENAME, media_type="application/octet-stream")
                 # return response_text
             else:
                 return {"status": f"Run id {dag_run_id} Not Found"}
