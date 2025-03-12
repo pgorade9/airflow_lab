@@ -12,7 +12,7 @@ airflow_router = APIRouter(prefix="/airflow2/api/v1",
 
 @airflow_router.get("/dags/run_status")
 def get_dag_run_status(env: str = Query(None, description="Environment",
-                                        enum=keyvault["envs-ltops"]),
+                                        enum=keyvault["envs-ltops"] + keyvault["envs"]),
                        dag: str = Query(None, description="DAG Name",
                                         enum=keyvault["dags-ltops"]),
                        run_id: str = Query("990de971-4d15-40eb-b635-d599ccdc169a", description="Run Id")):
@@ -21,7 +21,7 @@ def get_dag_run_status(env: str = Query(None, description="Environment",
 
 @airflow_router.get("/dags/logs")
 def get_dag_logs(env: str = Query("evd-ltops", description="Environment",
-                                  enum=keyvault["envs-ltops"]),
+                                  enum=keyvault["envs-ltops"] + keyvault["envs"]),
                  dag: str = Query("shapefile_ingestor_wf_status_gsm", description="DAG Name",
                                   enum=keyvault["dags-ltops"]),
                  run_id: str = Query("dc7399e8-c995-4cd1-b9f3-b6ada8836d54", description="Run Id"),

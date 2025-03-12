@@ -3,6 +3,7 @@ import time
 import uuid
 import pandas as pd
 import aiohttp
+from pathlib import Path
 
 from configuration import keyvault
 from fastapi.responses import FileResponse
@@ -10,11 +11,11 @@ from fastapi.responses import FileResponse
 
 async def get_dag_status_from_id(env, dag, dag_run_id):
     await set_kube_context(keyvault[env]["cluster"])
-    port_forward_process = await port_forward_airflow_web(keyvault[env]["namespace"])
+    port_forward_process = await port_forward_airflow_web(env, keyvault[env]["namespace"])
     async with aiohttp.ClientSession() as session:
-        url = f"{keyvault['airflow_url']}/api/v1/dags/{dag}/dagRuns/{dag_run_id}"
-        username = keyvault["airflow_username"]
-        password = keyvault["airflow_password"]
+        url = f"{keyvault[env]['airflow_url']}/api/v1/dags/{dag}/dagRuns/{dag_run_id}"
+        username = keyvault[env]["airflow_username"]
+        password = keyvault[env]["airflow_password"]
         auth = aiohttp.BasicAuth(username, password)
         headers = {"accept": "application/json"}
         async with session.get(url, auth=auth, headers=headers) as response:
@@ -28,11 +29,11 @@ async def get_dag_status_from_id(env, dag, dag_run_id):
 
 async def get_dag_logs_from_run_id(env, dag, dag_run_id, try_number):
     await set_kube_context(keyvault[env]["cluster"])
-    port_forward_process = await port_forward_airflow_web(keyvault[env]["namespace"])
+    port_forward_process = await port_forward_airflow_web(env, keyvault[env]["namespace"])
     async with aiohttp.ClientSession() as session:
-        url = f"{keyvault['airflow_url']}/api/v1/dags/{dag}/dagRuns/{dag_run_id}/taskInstances/{keyvault['task-id'][dag]}/logs/{try_number}"
-        username = keyvault["airflow_username"]
-        password = keyvault["airflow_password"]
+        url = f"{keyvault[env]['airflow_url']}/api/v1/dags/{dag}/dagRuns/{dag_run_id}/taskInstances/{keyvault['task-id'][dag]}/logs/{try_number}"
+        username = keyvault[env]["airflow_username"]
+        password = keyvault[env]["airflow_password"]
 
         auth = aiohttp.BasicAuth(username, password)
 
@@ -41,9 +42,10 @@ async def get_dag_logs_from_run_id(env, dag, dag_run_id, try_number):
             await stop_port_forward(port_forward_process)
             if response.status == 200:
                 FILENAME = f"{dag_run_id}.txt"
-                OUTPUT = "output"
-                PATH = f"{OUTPUT}/{FILENAME}"
-                with open(FILENAME, "w+") as fp:
+                OUTPUT = Path("output")
+                PATH = Path(f"{OUTPUT}/{FILENAME}")
+                print(f"{PATH=}")
+                with open(PATH, "w+") as fp:
                     for line in response_text:
                         fp.write(line)
                 return FileResponse(path=PATH, filename=FILENAME, media_type="application/octet-stream")
@@ -77,9 +79,9 @@ def generateAirflowDagMessage(env, dag, dataframe):
 async def trigger_dag(env, dag, dataframe):
     async with aiohttp.ClientSession() as session:
 
-        url = f"{keyvault["airflow_url"]}/api/v1/dags/{dag}/dagRuns"
-        username = keyvault["airflow_username"]
-        password = keyvault["airflow_password"]
+        url = f"{keyvault[env]["airflow_url"]}/api/v1/dags/{dag}/dagRuns"
+        username = keyvault[env]["airflow_username"]
+        password = keyvault[env]["airflow_password"]
         auth = aiohttp.BasicAuth(username, password)
         payload = generateAirflowDagMessage(env, dag, dataframe)
         # print(type(payload))
@@ -127,24 +129,24 @@ async def set_kube_context(context: str):
         print(stderr.decode().strip())
 
 
-async def port_forward_airflow_web(namespace: str):
+async def port_forward_airflow_web(env, namespace: str):
     """Runs kubectl port-forward in daemon mode (background)."""
     print(f"Starting port-forwarding for namespace: {namespace}")
-
+    service_name = "svc/airflow-app-web" if namespace != "airflow" else "svc/airflow-web"
     process = await asyncio.create_subprocess_exec(
-        "kubectl", "port-forward", "svc/airflow-app-web", "8100:8080", "-n", namespace,
+        "kubectl", "port-forward", service_name, "8100:8080", "-n", namespace,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE
     )
-    await validate_port_readiness()
+    await validate_port_readiness(env)
     return process
 
 
-async def validate_port_readiness():
+async def validate_port_readiness(env):
     print("Validating port readiness.")
-    url = f"{keyvault['airflow_url']}/health"
-    username = keyvault["airflow_username"]
-    password = keyvault["airflow_password"]
+    url = f"{keyvault[env]['airflow_url']}/health"
+    username = keyvault[env]["airflow_username"]
+    password = keyvault[env]["airflow_password"]
     auth = aiohttp.BasicAuth(username, password)
     headers = {"accept": "application/json"}
     async with aiohttp.ClientSession() as session:
@@ -157,7 +159,7 @@ async def validate_port_readiness():
                         break
                     await asyncio.sleep(1)
             except Exception as e:
-                print(f"Connection not ready.......")
+                print(f"Connection not ready for {url}.......")
 
 
 async def stop_port_forward(process):
