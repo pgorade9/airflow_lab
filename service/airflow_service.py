@@ -1,6 +1,8 @@
 import asyncio
 import time
 import uuid
+from datetime import datetime
+
 import pandas as pd
 import aiohttp
 from pathlib import Path
@@ -25,6 +27,50 @@ async def get_dag_status_from_id(env, dag, dag_run_id):
                 return response_json
             else:
                 return {"status": f"Run id {dag_run_id} Not Found"}
+
+
+def validate_datetime(date_string):
+    try:
+        # Define the expected format
+        expected_format = "%Y-%m-%dT%H:%M:%S.%f%z"
+
+        # Try parsing the datetime string
+        parsed_date = datetime.strptime(date_string, expected_format)
+
+        print(f"Valid datetime: {parsed_date}")
+        return True
+    except ValueError:
+        print("Invalid datetime format!")
+        return False
+
+
+# Test the function
+datetime_str = "2025-03-11T11:13:28.992416+00:00"
+validate_datetime(datetime_str)
+
+
+async def get_query_response(env, dag, date_string, run_state):
+    if not validate_datetime(date_string):
+        return {"msg": "Please use correct date time format as YYYY-MM-DDTHH:MM:SS.ssssss±HH:MM"}
+    await set_kube_context(keyvault[env]["cluster"])
+    port_forward_process = await port_forward_airflow_web(env, keyvault[env]["namespace"])
+    async with aiohttp.ClientSession() as session:
+        url = f"{keyvault[env]['airflow_url']}/api/v1/dags/{dag}/dagRuns"
+        username = keyvault[env]["airflow_username"]
+        password = keyvault[env]["airflow_password"]
+        auth = aiohttp.BasicAuth(username, password)
+        headers = {"accept": "application/json"}
+        # valid_params : execution_date_gte, state, execution_date_lte, order_by
+        params = {
+            "execution_date_gte": date_string,
+            "state": run_state
+        }
+        async with session.get(url, auth=auth, headers=headers, params=params) as response:
+            print(f"{url=}{params=}")
+            response_json = await response.json()
+            await stop_port_forward(port_forward_process)
+            if response.status == 200:
+                return response_json
 
 
 async def get_dag_logs_from_run_id(env, dag, dag_run_id, try_number):

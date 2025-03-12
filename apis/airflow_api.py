@@ -1,10 +1,10 @@
 import asyncio
 
-from fastapi import APIRouter, Query, Path
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Query
 
-from service.airflow_service import get_dag_status_from_id, async_trigger_dag, get_dag_logs_from_run_id
 from configuration import keyvault
+from service.airflow_service import (get_dag_status_from_id, async_trigger_dag,
+                                     get_dag_logs_from_run_id, get_query_response)
 
 airflow_router = APIRouter(prefix="/airflow2/api/v1",
                            tags=["Airflow APIs"], )
@@ -17,6 +17,16 @@ def get_dag_run_status(env: str = Query(None, description="Environment",
                                         enum=keyvault["dags-ltops"]),
                        run_id: str = Query("990de971-4d15-40eb-b635-d599ccdc169a", description="Run Id")):
     return asyncio.run(get_dag_status_from_id(env, dag, run_id))
+
+
+@airflow_router.get("/dags/query")
+def get_dag_run_status(env: str = Query(None, description="Environment",
+                                        enum=keyvault["envs-ltops"] + keyvault["envs"]),
+                       dag: str = Query(None, description="DAG Name",
+                                        enum=keyvault["dags-ltops"]),
+                       date_string: str = Query("2025-03-11T11:13:28.992416+00:00"),
+                       run_state: str = Query(enum=["success", "failed"], description="Run Status")):
+    return asyncio.run(get_query_response(env, dag, date_string, run_state))
 
 
 @airflow_router.get("/dags/logs")
