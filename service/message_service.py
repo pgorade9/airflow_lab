@@ -43,20 +43,25 @@ def generateFlowControllerMessage(env, data_partition_id, dag, df):
 async def send_batch_message(env, data_partition_id, dag, batch_size, timeout, dataframe):
     global batch_counter
 
-    async with ServiceBusClient.from_connection_string(conn_str=keyvault[env]["CONNECTION_STRING"][data_partition_id],
-                                                       logging_enable=False) as servicebus_client:
-        async with servicebus_client.get_topic_sender(topic_name=keyvault["TOPIC_NAME"],
-                                                      socket_timeout=timeout) as sender:
-            batch = await sender.create_message_batch()
-            for _ in range(batch_size):
-                try:
-                    batch.add_message(
-                        ServiceBusMessage(generateFlowControllerMessage(env, data_partition_id, dag, dataframe)))
-                except ValueError:
-                    break
-            await sender.send_messages(batch)
-            batch_counter += 1
-            print(f"Completed sending {batch_counter} batch of size {batch_size}")
+    try:
+
+        async with ServiceBusClient.from_connection_string(
+                conn_str=keyvault[env]["CONNECTION_STRING"][data_partition_id],
+                logging_enable=False) as service_bus_client:
+            async with service_bus_client.get_topic_sender(topic_name=keyvault["TOPIC_NAME"],
+                                                          socket_timeout=timeout) as sender:
+                batch = await sender.create_message_batch()
+                for _ in range(batch_size):
+                    try:
+                        batch.add_message(
+                            ServiceBusMessage(generateFlowControllerMessage(env, data_partition_id, dag, dataframe)))
+                    except ValueError:
+                        break
+                await sender.send_messages(batch)
+                batch_counter += 1
+                print(f"Completed sending {batch_counter} batch of size {batch_size}")
+    except KeyError as e:
+        raise e
 
 
 async def async_batch_message(env, data_partition_id, dag, batch_size, count):
@@ -71,13 +76,16 @@ async def async_batch_message(env, data_partition_id, dag, batch_size, count):
     print("**********************************")
     task_group_size = int(number_of_batches / task_size)
 
-    for _ in range(task_group_size):
-        tasks = [send_batch_message(env, data_partition_id, dag, batch_size, timeout, dataframe) for _ in
-                 range(task_size)]
-        await asyncio.gather(*tasks)
+    try:
+        for _ in range(task_group_size):
+            tasks = [send_batch_message(env, data_partition_id, dag, batch_size, timeout, dataframe) for _ in
+                     range(task_size)]
+            await asyncio.gather(*tasks)
 
-    return {
-        "msg": f"Sent Batch of {count} jobs to flow-controller topic on {data_partition_id} partition successfully"}
+        return {
+            "msg": f"Sent Batch of {count} jobs to flow-controller topic on {data_partition_id} partition successfully"}
+    except KeyError as e:
+        return {"msg": f"Not found Connection String for {data_partition_id=}"}
 
 
 async def process_message(receiver, msg: ServiceBusReceivedMessage, counter):
@@ -94,8 +102,8 @@ async def receive_and_complete_active_messages(env, data_partition_id):
     try:
         async with ServiceBusClient.from_connection_string(
                 conn_str=keyvault[env]["CONNECTION_STRING"][data_partition_id], logging_enable=False
-        ) as servicebus_client:
-            async with servicebus_client.get_subscription_receiver(
+        ) as service_bus_client:
+            async with service_bus_client.get_subscription_receiver(
                     topic_name=keyvault["TOPIC_NAME"],
                     subscription_name=keyvault["SUBSCRIPTION_NAME"],
                     receive_mode=ServiceBusReceiveMode.PEEK_LOCK,
@@ -110,47 +118,57 @@ async def receive_and_complete_active_messages(env, data_partition_id):
 
 
 async def receive_and_delete_dead_letter_queue_messages(env, data_partition_id):
-    async with ServiceBusClient.from_connection_string(
-            conn_str=keyvault[env]["CONNECTION_STRING"][data_partition_id], logging_enable=False
-    ) as servicebus_client:
-        async with servicebus_client.get_subscription_receiver(
-                topic_name=keyvault["TOPIC_NAME"],
-                subscription_name=keyvault["SUBSCRIPTION_NAME"],
-                sub_queue=ServiceBusSubQueue.DEAD_LETTER,
-                receive_mode=ServiceBusReceiveMode.RECEIVE_AND_DELETE,
-                max_wait_time=TIMEOUT
-        ) as receiver:
-            while True:
-                messages = await receiver.receive_messages(max_message_count=100, max_wait_time=5)
-                print(f"Deleted {len(messages)} messages")
-                if not messages:
-                    break  # Stop when no more messages
-    return {"msg": "Done Receiving and completing Dead Letter Queue messages"}
+    try:
+        async with ServiceBusClient.from_connection_string(
+                conn_str=keyvault[env]["CONNECTION_STRING"][data_partition_id], logging_enable=False
+        ) as service_bus_client:
+            async with service_bus_client.get_subscription_receiver(
+                    topic_name=keyvault["TOPIC_NAME"],
+                    subscription_name=keyvault["SUBSCRIPTION_NAME"],
+                    sub_queue=ServiceBusSubQueue.DEAD_LETTER,
+                    receive_mode=ServiceBusReceiveMode.RECEIVE_AND_DELETE,
+                    max_wait_time=TIMEOUT
+            ) as receiver:
+                while True:
+                    messages = await receiver.receive_messages(max_message_count=100, max_wait_time=5)
+                    print(f"Deleted {len(messages)} messages")
+                    if not messages:
+                        break  # Stop when no more messages
+        return {"msg": "Done Receiving and completing Dead Letter Queue messages"}
+    except KeyError as e:
+        return {"msg": f"Not found Connection String for {data_partition_id=}"}
 
 
 async def get_service_bus_topic_info(env, data_partition_id):
-    # Create a client to manage Service Bus
-    async with ServiceBusAdministrationClient.from_connection_string(
-            keyvault[env]["CONNECTION_STRING"][data_partition_id]) as admin_client:
-        # Get topic subscription details
-        subscription_info = await admin_client.get_subscription_runtime_properties(keyvault["TOPIC_NAME"],
-                                                                                   keyvault["SUBSCRIPTION_NAME"])
-        return subscription_info
+    try:
+        # Create a client to manage Service Bus
+        async with ServiceBusAdministrationClient.from_connection_string(
+                keyvault[env]["CONNECTION_STRING"][data_partition_id]) as service_bus_admin_client:
+            # Get topic subscription details
+            subscription_info = await service_bus_admin_client.get_subscription_runtime_properties(keyvault["TOPIC_NAME"],
+                                                                                       keyvault["SUBSCRIPTION_NAME"])
+            return subscription_info
+    except KeyError as e:
+        return {"msg": f"Not found Connection String for {data_partition_id=}"}
 
 
 async def receive_and_delete_active_messages(env, data_partition_id):
-    async with ServiceBusClient.from_connection_string(keyvault[env]["CONNECTION_STRING"][data_partition_id]) as client:
-        async with client.get_subscription_receiver(
-                topic_name=keyvault["TOPIC_NAME"],
-                subscription_name=keyvault["SUBSCRIPTION_NAME"],
-                receive_mode=ServiceBusReceiveMode.RECEIVE_AND_DELETE  # Messages are deleted immediately
-        ) as receiver:
-            while True:
-                messages = await receiver.receive_messages(max_message_count=100, max_wait_time=5)
-                print(f"Deleted {len(messages)} messages")
-                if not messages:
-                    break  # Stop when no more messages
-    return {"msg": "All Active Messages Deleted from {data_partition_id=}!"}
+    try:
+        async with ServiceBusClient.from_connection_string(
+                keyvault[env]["CONNECTION_STRING"][data_partition_id]) as service_bus_client:
+            async with service_bus_client.get_subscription_receiver(
+                    topic_name=keyvault["TOPIC_NAME"],
+                    subscription_name=keyvault["SUBSCRIPTION_NAME"],
+                    receive_mode=ServiceBusReceiveMode.RECEIVE_AND_DELETE  # Messages are deleted immediately
+            ) as receiver:
+                while True:
+                    messages = await receiver.receive_messages(max_message_count=100, max_wait_time=5)
+                    print(f"Deleted {len(messages)} messages")
+                    if not messages:
+                        break  # Stop when no more messages
+        return {"msg": "All Active Messages Deleted from {data_partition_id=}!"}
+    except KeyError as e:
+        return {"msg": f"Not found Connection String for {data_partition_id=}"}
 
 
 if __name__ == "__main__":

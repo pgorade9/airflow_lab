@@ -7,7 +7,7 @@ from service.airflow_service import (get_dag_status_from_id, async_trigger_dag,
                                      get_dag_logs_from_run_id, get_query_response)
 
 airflow_router = APIRouter(prefix="/airflow2/api/v1",
-                           tags=["Airflow APIs"], )
+                           tags=["Airflow APIs (environment dependant)"], )
 
 
 @airflow_router.get("/dags/run_status")

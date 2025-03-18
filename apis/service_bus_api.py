@@ -9,7 +9,7 @@ from fastapi import routing
 from configuration import keyvault
 
 fc_router = routing.APIRouter(prefix="/service_bus",
-                              tags=["Service Bus Messaging APIs"], )
+                              tags=["Service Bus Messaging APIs (data-partition-dependant)"], )
 
 
 @fc_router.get("/topic_info")
