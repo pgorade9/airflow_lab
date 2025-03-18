@@ -17,6 +17,7 @@ def get_topic_info(env: str = Query(None, description="Environment",
                                     enum=keyvault["envs-ltops"])):
     subscription_info = asyncio.run(get_service_bus_topic_info(env))
     return {
+        "data_partition_id": f"{keyvault[env]['data_partition_id']}",
         "Active messages": f"{subscription_info.active_message_count}",
         "Dead-letter messages": f"{subscription_info.dead_letter_message_count}",
         "Total messages": f"{subscription_info.total_message_count}"

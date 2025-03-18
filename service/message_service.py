@@ -73,7 +73,7 @@ async def async_batch_message(env, dag, batch_size, count):
         tasks = [send_batch_message(env, dag, batch_size, timeout, dataframe) for _ in range(task_size)]
         await asyncio.gather(*tasks)
 
-    return {"msg": f"Sent Batch of {count} jobs to flow-controller topic on admedev01-dp4 partition successfully"}
+    return {"msg": f"Sent Batch of {count} jobs to flow-controller topic on {keyvault[env]['data_partition_id']} partition successfully"}
 
 
 async def process_message(receiver, msg: ServiceBusReceivedMessage, counter):
