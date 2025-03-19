@@ -49,7 +49,7 @@ async def send_batch_message(env, data_partition_id, dag, batch_size, timeout, d
                 conn_str=keyvault[env]["CONNECTION_STRING"][data_partition_id],
                 logging_enable=False) as service_bus_client:
             async with service_bus_client.get_topic_sender(topic_name=keyvault["TOPIC_NAME"],
-                                                          socket_timeout=timeout) as sender:
+                                                           socket_timeout=timeout) as sender:
                 batch = await sender.create_message_batch()
                 for _ in range(batch_size):
                     try:
@@ -141,12 +141,13 @@ async def receive_and_delete_dead_letter_queue_messages(env, data_partition_id):
 
 async def get_service_bus_topic_info(env, data_partition_id):
     try:
+        data_partition = keyvault[env]["CONNECTION_STRING"][data_partition_id]
         # Create a client to manage Service Bus
-        async with ServiceBusAdministrationClient.from_connection_string(
-                keyvault[env]["CONNECTION_STRING"][data_partition_id]) as service_bus_admin_client:
+        async with ServiceBusAdministrationClient.from_connection_string(data_partition) as service_bus_admin_client:
             # Get topic subscription details
-            subscription_info = await service_bus_admin_client.get_subscription_runtime_properties(keyvault["TOPIC_NAME"],
-                                                                                       keyvault["SUBSCRIPTION_NAME"])
+            subscription_info = await service_bus_admin_client.get_subscription_runtime_properties(
+                keyvault["TOPIC_NAME"],
+                keyvault["SUBSCRIPTION_NAME"])
             return subscription_info
     except KeyError as e:
         return {"msg": f"Not found Connection String for {data_partition_id=}"}

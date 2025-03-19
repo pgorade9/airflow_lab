@@ -1,5 +1,6 @@
 import asyncio
 
+from azure.servicebus.management import SubscriptionRuntimeProperties
 from fastapi import Query
 
 from service.message_service import get_service_bus_topic_info, async_batch_message, \
@@ -17,12 +18,15 @@ def get_topic_info(env: str = Query(None, description="Environment",
                                     enum=keyvault["envs-ltops"]),
                    data_partition_id: str = "admedev01-dp3"):
     subscription_info = asyncio.run(get_service_bus_topic_info(env, data_partition_id))
-    return {
-        "data_partition_id": f"{data_partition_id}",
-        "Active messages": f"{subscription_info.active_message_count}",
-        "Dead-letter messages": f"{subscription_info.dead_letter_message_count}",
-        "Total messages": f"{subscription_info.total_message_count}"
-    }
+    if isinstance(subscription_info, SubscriptionRuntimeProperties):
+        return {
+            "data_partition_id": f"{data_partition_id}",
+            "Active messages": f"{subscription_info.active_message_count}",
+            "Dead-letter messages": f"{subscription_info.dead_letter_message_count}",
+            "Total messages": f"{subscription_info.total_message_count}"
+        }
+    else:
+        return subscription_info
 
 
 @fc_router.post("/send_bulk_messages")
