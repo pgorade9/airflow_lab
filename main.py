@@ -1,5 +1,5 @@
-from fastapi import FastAPI, routing
 import uvicorn
+from fastapi import FastAPI
 
 from apis.airflow_api import airflow_router
 from apis.service_bus_api import fc_router
