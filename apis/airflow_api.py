@@ -16,6 +16,7 @@ env_list = [key for key in keyvault.keys() if
 data_partition_list = list({keyvault[key].get("data_partition_id") for key in keyvault.keys() if
                             isinstance(keyvault[key], dict) and keyvault[key].get("data_partition_id") is not None})
 
+
 @airflow_router.get("/dags/run_status")
 def get_dag_run_status(env: Literal[*env_list] = Query(...),
                        dag: str = Query(None, description="DAG Name",
