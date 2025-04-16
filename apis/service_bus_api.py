@@ -19,7 +19,7 @@ env_list = [key for key in keyvault.keys() if
 data_partition_list = set()
 for key in keyvault.keys():
     if isinstance(keyvault[key], dict) and keyvault[key].get("data_partition_id") not in [None,""]:
-        data_partition_list.add(*keyvault.get(key).get("data_partitions"))
+        data_partition_list.update(keyvault.get(key).get("data_partitions"))
 
 @fc_router.get("/topic_info")
 def get_topic_info(env: Literal[*env_list] = Query(...),
