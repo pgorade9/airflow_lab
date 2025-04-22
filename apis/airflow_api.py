@@ -5,7 +5,7 @@ from fastapi import APIRouter, Query
 
 from configuration import keyvault
 from service.airflow_service import (get_dag_status_from_id, async_trigger_dag,
-                                     get_dag_logs_from_run_id, get_query_response)
+                                     get_dag_logs_from_run_id, get_query_response, get_airflow_ui)
 
 airflow_router = APIRouter(prefix="/airflow2/api/v1",
                            tags=["Airflow APIs (environment dependant)"], )
@@ -15,10 +15,16 @@ env_list = [key for key in keyvault.keys() if
 
 data_partition_list = set()
 for key in keyvault.keys():
-    if isinstance(keyvault[key], dict) and keyvault[key].get("data_partition_id") not in [None,""]:
+    if isinstance(keyvault[key], dict) and keyvault[key].get("data_partition_id") not in [None, ""]:
         data_partition_list.update(keyvault.get(key).get("data_partitions"))
 
 dag_list = keyvault['dags-ltops'] + keyvault['dags-seismic-ltops']
+
+
+@airflow_router.get("/airflow")
+def open_airflow_ui(env: Literal[*env_list] = Query(...)):
+    return asyncio.run(get_airflow_ui(env))
+
 
 @airflow_router.get("/dags/run_status")
 def get_dag_run_status(env: Literal[*env_list] = Query(...),

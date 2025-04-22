@@ -11,6 +11,13 @@ from configuration import keyvault
 from fastapi.responses import FileResponse
 
 
+async def get_airflow_ui(env: str):
+    await set_kube_context(keyvault[env]["cluster"])
+    await port_forward_airflow_web(env, keyvault[env]["namespace"])
+    msg = f"Connected to Airflow on {env}. Please click here to explore Airflow http://localhost:8100/airflow2/home"
+    return {'msg': msg}
+
+
 async def get_dag_status_from_id(env, dag, dag_run_id):
     await set_kube_context(keyvault[env]["cluster"])
     port_forward_process = await port_forward_airflow_web(env, keyvault[env]["namespace"])
