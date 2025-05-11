@@ -1,4 +1,6 @@
 import asyncio
+import os
+import signal
 import uuid
 from datetime import datetime
 
@@ -46,10 +48,50 @@ async def set_kube_context(context: str):
         print(stderr.decode().strip())
 
 
+async def check_port_forward_running(namespace: str, port: str = "8100"):
+    """Check if a kubectl port-forward process is already running for the namespace."""
+    print("Check if a kubectl port-forward process is already running for the namespace.")
+    cmd = "tasklist | findstr kubectl"
+    process = await asyncio.create_subprocess_shell(
+        cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    stdout, _ = await process.communicate()
+    if stdout.strip():
+        lines = stdout.decode().strip().splitlines()
+        # Optionally pick the first line
+        line = lines[0]
+        parts = line.split()
+        pid = int(parts[1])  # Second column is the PID
+        print(f"Found existing port-forward process with PID: {pid}")
+        return pid  # Or return more details if needed
+    return None
+
+
+async def stop_process_by_pid(pid: int):
+    """Asynchronously kill a process by PID on Windows."""
+    process = await asyncio.create_subprocess_exec(
+        "taskkill", "/PID", str(pid), "/F",  # /F = force
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await process.communicate()
+    if process.returncode == 0:
+        print(f"Successfully killed process {pid}")
+    else:
+        print(f"Failed to kill process {pid}: {stderr.decode().strip()}")
+
+
 async def port_forward_airflow_web(env, namespace: str):
     """Runs kubectl port-forward in daemon mode (background)."""
-    print(f"Starting port-forwarding for namespace: {namespace}")
+    pid = await check_port_forward_running(namespace)
+    if pid:
+        print(f"Port-forward already running for namespace: {namespace}")
+        await stop_process_by_pid(pid)
+
     service_name = "svc/airflow-app-web" if namespace != "airflow" else "svc/airflow-web"
+    print(f"Starting port-forwarding for {service_name=} on {namespace=}")
     process = await asyncio.create_subprocess_exec(
         "kubectl", "port-forward", service_name, "8100:8080", "-n", namespace,
         stdout=asyncio.subprocess.PIPE,
